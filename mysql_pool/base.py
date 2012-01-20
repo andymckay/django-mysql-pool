@@ -1,9 +1,10 @@
-from sqlalchemy.pool import QueuePool
+from sqlalchemy.pool import manage, QueuePool
 from sqlalchemy import event
 
 from django.db.backends.mysql.base import *
 from functools import partial
 
+import hashlib
 import logging
 
 
@@ -23,8 +24,18 @@ event.listen(QueuePool, 'connect', partial(_log, 'new connection'))
 # DATABASE_POOL_ARGS should be something like:
 # {'max_overflow':10, 'pool_size':5, 'recycle':300}
 
-class DatabaseWrapper(DatabaseWrapper):
+Database = manage(Database, **settings.DATABASE_POOL_ARGS)
 
+
+def serialize(**kwargs):
+    # We need to figure out what database connection goes where
+    # so we'll hash the args.
+    return hashlib.md5(str(kwargs)).hexdigest()
+
+
+class DatabaseWrapper(DatabaseWrapper):
+    # Unfortunately we have to override the whole cursor function
+    # so that Django will pick up our managed Database class.
     def _cursor(self):
         if not self._valid_connection():
             kwargs = {
@@ -49,13 +60,15 @@ class DatabaseWrapper(DatabaseWrapper):
             # "UPDATE", not the number of changed rows.
             kwargs['client_flag'] = CLIENT.FOUND_ROWS
             kwargs.update(settings_dict['OPTIONS'])
+            # SQL Alchemy can't serialize the dict that's in OPTIONS, so
+            # we'll do some serialization ourselves. You can avoid this
+            # step specifying sa_pool_key in the DB settings.
+            if 'sa_pool_key' not in kwargs:
+                kwargs['sa_pool_key'] = serialize(**kwargs)
 
-            mypool._creator = partial(Database.connect, **kwargs)
-            self.connection = mypool.connect()
-
+            self.connection = Database.connect(**kwargs)
             self.connection.encoders[SafeUnicode] = self.connection.encoders[unicode]
             self.connection.encoders[SafeString] = self.connection.encoders[str]
             connection_created.send(sender=self.__class__, connection=self)
-
         cursor = CursorWrapper(self.connection.cursor())
         return cursor
