@@ -8,10 +8,6 @@ import hashlib
 import logging
 
 
-def null(*args, **kwargs):
-    pass
-
-mypool = QueuePool(null, **settings.DATABASE_POOL_ARGS)
 log = logging.getLogger('z.pool')
 
 def _log(message, *args):
