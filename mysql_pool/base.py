@@ -11,7 +11,6 @@ import logging
 log = logging.getLogger('z.pool')
 
 def _log(message, *args):
-    print message
     log.debug('%s to %s' % (message, args[0].get_host_info()))
 
 event.listen(QueuePool, 'checkout', partial(_log, 'retrieved from pool'))
