@@ -11,6 +11,7 @@ import logging
 log = logging.getLogger('z.pool')
 
 def _log(message, *args):
+    print message
     log.debug('%s to %s' % (message, args[0].get_host_info()))
 
 event.listen(QueuePool, 'checkout', partial(_log, 'retrieved from pool'))
@@ -26,7 +27,10 @@ Database = manage(Database, **getattr(settings, 'DATABASE_POOL_ARGS', {}))
 def serialize(**kwargs):
     # We need to figure out what database connection goes where
     # so we'll hash the args.
-    return hashlib.md5(str(kwargs)).hexdigest()
+    keys = sorted(kwargs.keys())
+    out = [repr(k) + repr(kwargs[k])
+           for k in keys if isinstance(kwargs[k], (str, int, bool))]
+    return hashlib.md5(''.join(out)).hexdigest()
 
 
 class DatabaseWrapper(DatabaseWrapper):
@@ -60,17 +64,16 @@ class DatabaseWrapper(DatabaseWrapper):
         # SQL Alchemy can't serialize the dict that's in OPTIONS, so
         # we'll do some serialization ourselves. You can avoid this
         # step specifying sa_pool_key in the DB settings.
-        if 'sa_pool_key' not in kwargs:
-            kwargs['sa_pool_key'] = serialize(**kwargs)
-        self._settings_dict = kwargs
+        kwargs['sa_pool_key'] = serialize(**kwargs)
+        return kwargs
 
     def _cursor(self):
-        if not getattr(self, '_settings_dict', None):
-            self._set_settings()
+        if not self._valid_connection():
+            settings = self._set_settings()
+            self.connection = Database.connect(**settings)
+            self.connection.encoders[SafeUnicode] = self.connection.encoders[unicode]
+            self.connection.encoders[SafeString] = self.connection.encoders[str]
+            connection_created.send(sender=self.__class__, connection=self)
 
-        self.connection = Database.connect(**self._settings_dict)
-        self.connection.encoders[SafeUnicode] = self.connection.encoders[unicode]
-        self.connection.encoders[SafeString] = self.connection.encoders[str]
-        connection_created.send(sender=self.__class__, connection=self)
         cursor = CursorWrapper(self.connection.cursor())
         return cursor
