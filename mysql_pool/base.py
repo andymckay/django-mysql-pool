@@ -1,13 +1,24 @@
 from sqlalchemy.pool import QueuePool
+from sqlalchemy import event
 
 from django.db.backends.mysql.base import *
 from functools import partial
+
+import logging
 
 
 def null(*args, **kwargs):
     pass
 
 mypool = QueuePool(null, **settings.DATABASE_POOL_ARGS)
+log = logging.getLogger('z.pool')
+
+def _log(message, *args):
+    log.debug('%s to %s' % (message, args[0].get_host_info()))
+
+event.listen(QueuePool, 'checkout', partial(_log, 'retrieved from pool'))
+event.listen(QueuePool, 'checkin', partial(_log, 'returned to pool'))
+event.listen(QueuePool, 'connect', partial(_log, 'new connection'))
 
 # DATABASE_POOL_ARGS should be something like:
 # {'max_overflow':10, 'pool_size':5, 'recycle':300}
