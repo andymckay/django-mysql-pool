@@ -2,6 +2,7 @@ from sqlalchemy.pool import manage, QueuePool
 from sqlalchemy import event
 
 from django.db.backends.mysql.base import *
+from django.db.backends.mysql.creation import DatabaseCreation
 from functools import partial
 
 import hashlib
@@ -9,6 +10,7 @@ import logging
 
 
 log = logging.getLogger('z.pool')
+
 
 def _log(message, *args):
     log.debug('%s to %s' % (message, args[0].get_host_info()))
@@ -32,9 +34,21 @@ def serialize(**kwargs):
     return hashlib.md5(''.join(out)).hexdigest()
 
 
+class DatabaseCreation(DatabaseCreation):
+    # The creation flips around between databases in a way that the pool
+    # doesn't like. After the db is created, reset the pool.
+    def _create_test_db(self, *args):
+        result = super(DatabaseCreation, self)._create_test_db(*args)
+        Database.close()
+        return result
+
+
 class DatabaseWrapper(DatabaseWrapper):
     # Unfortunately we have to override the whole cursor function
     # so that Django will pick up our managed Database class.
+    def __init__(self, *args, **kwargs):
+        super(DatabaseWrapper, self).__init__(*args, **kwargs)
+        self.creation = DatabaseCreation(self)
 
     def _set_settings(self):
         kwargs = {
