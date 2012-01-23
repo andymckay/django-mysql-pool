@@ -21,8 +21,7 @@ event.listen(QueuePool, 'connect', partial(_log, 'new connection'))
 
 # DATABASE_POOL_ARGS should be something like:
 # {'max_overflow':10, 'pool_size':5, 'recycle':300}
-
-Database = manage(Database, **getattr(settings, 'DATABASE_POOL_ARGS', {}))
+db_pool = manage(Database, **getattr(settings, 'DATABASE_POOL_ARGS', {}))
 
 
 def serialize(**kwargs):
@@ -39,7 +38,7 @@ class DatabaseCreation(DatabaseCreation):
     # doesn't like. After the db is created, reset the pool.
     def _create_test_db(self, *args):
         result = super(DatabaseCreation, self)._create_test_db(*args)
-        Database.close()
+        db_pool.close()
         return result
 
 
@@ -50,14 +49,16 @@ class DatabaseWrapper(DatabaseWrapper):
         super(DatabaseWrapper, self).__init__(*args, **kwargs)
         self.creation = DatabaseCreation(self)
 
-    def _set_settings(self):
+    def _serialize(self, settings_dict=None):
+        if settings_dict is None:
+            settings_dict = self.settings_dict
+
         kwargs = {
             'conv': django_conversions,
             'charset': 'utf8',
             'use_unicode': True,
         }
 
-        settings_dict = self.settings_dict
         if settings_dict['USER']:
             kwargs['user'] = settings_dict['USER']
         if settings_dict['NAME']:
@@ -81,12 +82,10 @@ class DatabaseWrapper(DatabaseWrapper):
         return kwargs
 
     def _cursor(self):
-        if not self._valid_connection():
-            settings = self._set_settings()
-            self.connection = Database.connect(**settings)
-            self.connection.encoders[SafeUnicode] = self.connection.encoders[unicode]
-            self.connection.encoders[SafeString] = self.connection.encoders[str]
-            connection_created.send(sender=self.__class__, connection=self)
-
+        settings = self._serialize()
+        self.connection = db_pool.connect(**settings)
+        self.connection.encoders[SafeUnicode] = self.connection.encoders[unicode]
+        self.connection.encoders[SafeString] = self.connection.encoders[str]
+        connection_created.send(sender=self.__class__, connection=self)
         cursor = CursorWrapper(self.connection.cursor())
         return cursor
