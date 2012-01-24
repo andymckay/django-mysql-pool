@@ -81,11 +81,20 @@ class DatabaseWrapper(DatabaseWrapper):
         kwargs['sa_pool_key'] = serialize(**kwargs)
         return kwargs
 
+    def _is_valid_connection(self):
+        # If you don't want django to check that the connection is valid,
+        # then set DATABASE_POOL_CHECK to False.
+        if getattr(settings, 'DATABASE_POOL_CHECK', True):
+            return self._valid_connection()
+        return False
+
     def _cursor(self):
-        settings = self._serialize()
-        self.connection = db_pool.connect(**settings)
-        self.connection.encoders[SafeUnicode] = self.connection.encoders[unicode]
-        self.connection.encoders[SafeString] = self.connection.encoders[str]
-        connection_created.send(sender=self.__class__, connection=self)
+        if not self._is_valid_connection():
+            _settings = self._serialize()
+            self.connection = db_pool.connect(**_settings)
+            self.connection.encoders[SafeUnicode] = self.connection.encoders[unicode]
+            self.connection.encoders[SafeString] = self.connection.encoders[str]
+            connection_created.send(sender=self.__class__, connection=self)
+
         cursor = CursorWrapper(self.connection.cursor())
         return cursor

@@ -18,3 +18,11 @@ Example::
     }
 
 Require SQL Alchemy 0.7 for the events.
+
+
+TODO:
+
+- some proper tests
+
+- make test utils work with multiple databases, by doing features.confirm on
+  each database connnection, as opposed to just the first.

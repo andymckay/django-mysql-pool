@@ -2,8 +2,9 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.utils import unittest
+from django.db import connection
 
-from mock import Mock
+from mock import Mock, patch
 from mysql_pool.base import DatabaseWrapper, db_pool
 
 from sqlalchemy.pool import QueuePool
@@ -57,7 +58,6 @@ class TestPool(unittest.TestCase):
     def setUp(self):
         # Make sure we start with nothing in the pool.
         cache.clear()
-        db_pool.close()
         self.wrapper = DatabaseWrapper(Mock())
         self.events = []
         self.connect = lambda *args: self.events.append('connect')
@@ -67,6 +67,8 @@ class TestPool(unittest.TestCase):
         event.listen(QueuePool, 'checkin', self.checkin)
         event.listen(QueuePool, 'checkout', self.checkout)
         self.qs = User.objects.all()
+        db_pool.close()
+        connection.close()
 
     def test_serialize(self):
         _keys = []
