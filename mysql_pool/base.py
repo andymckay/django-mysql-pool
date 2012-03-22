@@ -15,9 +15,11 @@ log = logging.getLogger('z.pool')
 def _log(message, *args):
     log.debug('%s to %s' % (message, args[0].get_host_info()))
 
-event.listen(QueuePool, 'checkout', partial(_log, 'retrieved from pool'))
-event.listen(QueuePool, 'checkin', partial(_log, 'returned to pool'))
-event.listen(QueuePool, 'connect', partial(_log, 'new connection'))
+# Only hook up the listeners if we are in debug mode.
+if settings.DEBUG:
+    event.listen(QueuePool, 'checkout', partial(_log, 'retrieved from pool'))
+    event.listen(QueuePool, 'checkin', partial(_log, 'returned to pool'))
+    event.listen(QueuePool, 'connect', partial(_log, 'new connection'))
 
 # DATABASE_POOL_ARGS should be something like:
 # {'max_overflow':10, 'pool_size':5, 'recycle':300}
@@ -31,7 +33,6 @@ def serialize(**kwargs):
     out = [repr(k) + repr(kwargs[k])
            for k in keys if isinstance(kwargs[k], (str, int, bool))]
     return hashlib.md5(''.join(out)).hexdigest()
-
 
 class DatabaseCreation(DatabaseCreation):
     # The creation flips around between databases in a way that the pool

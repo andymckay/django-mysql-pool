@@ -91,6 +91,7 @@ class TestPool(unittest.TestCase):
             len(User.objects.using(db).all())
         assert len(db_pool.pools) == len(databases)
 
+    @patch.object(settings, 'DEBUG', True)
     def test_connect(self):
         len(self.qs)
         assert len(db_pool.pools) == 1
