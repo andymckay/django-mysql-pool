@@ -1,8 +1,8 @@
 from sqlalchemy.pool import manage, QueuePool
 from sqlalchemy import event
 
-from django.db.backends.mysql.base import *
-from django.db.backends.mysql.creation import DatabaseCreation
+from django.conf import settings
+from django.utils import importlib
 from functools import partial
 
 import hashlib
@@ -21,9 +21,15 @@ if settings.DEBUG:
     event.listen(QueuePool, 'checkin', partial(_log, 'returned to pool'))
     event.listen(QueuePool, 'connect', partial(_log, 'new connection'))
 
+# default to the django default db backend, use the setting if defined.
+pool_args = getattr(settings, 'DATABASE_POOL_ARGS', {})
+db_backend = pool_args.pop('backend', 'django.db.backends.mysql.base')
+
+backend_module = importlib.import_module(db_backend)
+
 # DATABASE_POOL_ARGS should be something like:
 # {'max_overflow':10, 'pool_size':5, 'recycle':300}
-db_pool = manage(Database, **getattr(settings, 'DATABASE_POOL_ARGS', {}))
+db_pool = manage(backend_module.Database, **pool_args)
 
 
 def serialize(**kwargs):
@@ -34,7 +40,8 @@ def serialize(**kwargs):
            for k in keys if isinstance(kwargs[k], (str, int, bool))]
     return hashlib.md5(''.join(out)).hexdigest()
 
-class DatabaseCreation(DatabaseCreation):
+
+class DatabaseCreation(backend_module.DatabaseCreation):
     # The creation flips around between databases in a way that the pool
     # doesn't like. After the db is created, reset the pool.
     def _create_test_db(self, *args):
@@ -43,7 +50,7 @@ class DatabaseCreation(DatabaseCreation):
         return result
 
 
-class DatabaseWrapper(DatabaseWrapper):
+class DatabaseWrapper(backend_module.DatabaseWrapper):
     # Unfortunately we have to override the whole cursor function
     # so that Django will pick up our managed Database class.
     def __init__(self, *args, **kwargs):
@@ -55,7 +62,7 @@ class DatabaseWrapper(DatabaseWrapper):
             settings_dict = self.settings_dict
 
         kwargs = {
-            'conv': django_conversions,
+            'conv': backend_module.django_conversions,
             'charset': 'utf8',
             'use_unicode': True,
         }
@@ -74,7 +81,7 @@ class DatabaseWrapper(DatabaseWrapper):
             kwargs['port'] = int(settings_dict['PORT'])
         # We need the number of potentially affected rows after an
         # "UPDATE", not the number of changed rows.
-        kwargs['client_flag'] = CLIENT.FOUND_ROWS
+        kwargs['client_flag'] = backend_module.CLIENT.FOUND_ROWS
         kwargs.update(settings_dict['OPTIONS'])
         # SQL Alchemy can't serialize the dict that's in OPTIONS, so
         # we'll do some serialization ourselves. You can avoid this
@@ -93,9 +100,14 @@ class DatabaseWrapper(DatabaseWrapper):
         if not self._is_valid_connection():
             _settings = self._serialize()
             self.connection = db_pool.connect(**_settings)
-            self.connection.encoders[SafeUnicode] = self.connection.encoders[unicode]
-            self.connection.encoders[SafeString] = self.connection.encoders[str]
-            connection_created.send(sender=self.__class__, connection=self)
 
-        cursor = CursorWrapper(self.connection.cursor())
+            self.connection.encoders[backend_module.SafeUnicode] =\
+                    self.connection.encoders[unicode]
+            self.connection.encoders[backend_module.SafeString] =\
+                    self.connection.encoders[str]
+
+            backend_module.connection_created.send(sender=self.__class__,
+                                                   connection=self)
+
+        cursor = backend_module.CursorWrapper(self.connection.cursor())
         return cursor
