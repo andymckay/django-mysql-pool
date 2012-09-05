@@ -17,6 +17,13 @@ Example::
         ...
     }
 
+Also optionally, you can add a 'backend' key with the importable path to
+the backend you want to use. ::
+
+    'backend': 'mysql_pymysql.base'
+
+Currently, we only support mysql_pymysql and the default django mysql backend.
+
 Require SQL Alchemy 0.7 for the events.
 
 
